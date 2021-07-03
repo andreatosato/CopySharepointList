@@ -3,6 +3,8 @@ using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Graph;
+using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -26,24 +28,39 @@ namespace CopySharepointList
                 .Lists
                 .Request()
                 .GetAsync();
+
             do
             {
                 foreach (var l in listsMaster.CurrentPage)
                 {
                     if (listsToCopy.Contains(l.Name))
                     {
-                        var items = await graphServiceClient
+                        Console.WriteLine($"{l.Name}");
+
+                        var queryOptions = new List<QueryOption>()
+                        {
+                            new QueryOption("expand", "fields")
+                        };
+
+                        var listItems = await graphServiceClient
                             .Sites["f6216b26-a584-4249-b9ac-3215bb884a89"]
                             .Lists[l.Id]
                             .Items
-                            .Request().GetAsync();
-                        var f = items.CurrentPage[0].Fields;
+                            .Request(queryOptions).GetAsync();
+                        foreach (var row in listItems.CurrentPage)
+                        {
+                            var title = row.Fields.AdditionalData["Title"];
+                            var ragioneSociale = row.Fields.AdditionalData["RagioneSociale"];
+                            Console.WriteLine($"{title}{ragioneSociale}");
+
+                        }
+                        //var f = items.CurrentPage[0].Fields;
                     }
                 }
-                listsMaster.CurrentPage.ToString();
+                if (listsMaster.NextPageRequest != null)
+                    await listsMaster.NextPageRequest.GetAsync();
             }
-            while (listsMaster.NextPageRequest == null);
-
+            while (listsMaster.NextPageRequest != null);
 
             return new OkResult();
         }
