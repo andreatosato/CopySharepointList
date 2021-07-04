@@ -58,6 +58,7 @@ namespace CopySharepointList
                     });
 
                     services.AddScoped<IReaderFields, ReaderFields>();
+                    services.AddScoped<ISiteService, SiteService>();
                 })
                 .Build();
 

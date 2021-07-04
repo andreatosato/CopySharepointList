@@ -52,7 +52,6 @@ namespace CopySharepointList
                             var title = row.Fields.AdditionalData["Title"];
                             var ragioneSociale = row.Fields.AdditionalData["RagioneSociale"];
                             Console.WriteLine($"{title}{ragioneSociale}");
-
                         }
                         //var f = items.CurrentPage[0].Fields;
                     }
