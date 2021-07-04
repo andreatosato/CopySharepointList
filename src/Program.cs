@@ -1,4 +1,5 @@
 using CopySharepointList.Configurations;
+using CopySharepointList.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -23,6 +24,12 @@ namespace CopySharepointList
                     {
                         configuration.GetSection("AuthConfig").Bind(settings);
                     });
+
+                    services.AddOptions<ListConfigurations>()
+                   .Configure<IConfiguration>((settings, configuration) =>
+                   {
+                       configuration.GetSection("ListConfig").Bind(settings);
+                   });
 
                     services.AddSingleton<IConfidentialClientApplication>(sp =>
                     {
@@ -49,6 +56,8 @@ namespace CopySharepointList
                                   return Task.CompletedTask;
                               }), null);
                     });
+
+                    services.AddScoped<IReaderFields, ReaderFields>();
                 })
                 .Build();
 
