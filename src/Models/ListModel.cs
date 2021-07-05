@@ -11,6 +11,6 @@ namespace CopySharepointList.Models
 
     public class ListFields
     {
-        public List<ListModel> Lists { get; set; }
+        public List<ListModel> Lists { get; set; } = new List<ListModel>();
     }
 }

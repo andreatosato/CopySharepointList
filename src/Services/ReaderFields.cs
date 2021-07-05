@@ -8,7 +8,7 @@ namespace CopySharepointList.Services
     public class ReaderFields : IReaderFields
     {
         private readonly ListConfigurations listConfiguration;
-        private readonly ListFields listFields;
+        private ListFields listFields;
 
         public ReaderFields(IOptions<ListConfigurations> listConfiguration)
         {
@@ -23,6 +23,7 @@ namespace CopySharepointList.Services
             if (listFields != null)
                 return listFields;
 
+            listFields = new ListFields();
             var lists = listConfiguration.ListsToCopy.Split(";");
             for (int i = 0; i < lists.Length; i++)
             {

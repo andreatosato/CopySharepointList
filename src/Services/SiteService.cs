@@ -1,6 +1,7 @@
 ﻿using CopySharepointList.Configurations;
 using Microsoft.Extensions.Options;
 using Microsoft.Graph;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -22,7 +23,7 @@ namespace CopySharepointList.Services
             this.listConfigutation = listConfigutation?.Value;
         }
 
-        public async Task<bool> CheckListExist(string siteId, string listId)
+        private async Task<bool> CheckListExist(string siteId, string listId)
         {
             var site = await graphClient.Sites[siteId].Request().GetAsync();
             if (site == null)
@@ -33,7 +34,7 @@ namespace CopySharepointList.Services
             return list == null;
         }
 
-        public async Task CreateListAsync(string siteId, string listName, string[] fields)
+        private async Task CreateListAsync(string siteId, string listName, string[] fields)
         {
             var listToCreate = new List
             {
@@ -56,9 +57,9 @@ namespace CopySharepointList.Services
                 .AddAsync(listToCreate);
         }
 
-        public async Task ReadListsToCopyAsync()
+        private async Task ReadListsToCopyAsync()
         {
-            var listsMaster = await graphClient.Sites[listConfigutation.ListMasterId]
+            var listsMaster = await graphClient.Sites[listConfigutation.SiteMasterId]
                 .Lists
                 .Request()
                 .GetAsync();
@@ -79,7 +80,7 @@ namespace CopySharepointList.Services
             while (listsMaster.NextPageRequest != null);
         }
 
-        public async IAsyncEnumerable<Dictionary<string, object>> CopyFromMaster(
+        private async IAsyncEnumerable<Dictionary<string, object>> CopyFromMaster(
             string siteMasterId,
             string siteMasterListId,
             string[] fields)
@@ -102,7 +103,10 @@ namespace CopySharepointList.Services
                     var rowReader = new Dictionary<string, object>();
                     foreach (var f in fields)
                     {
-                        rowReader.Add(f, row.Fields.AdditionalData[f]);
+                        if (row.Fields.AdditionalData.TryGetValue(f, out object currentValue))
+                            rowReader.Add(f, currentValue);
+                        else
+                            Console.WriteLine($"Il field {f} is not present");
                     }
                     yield return rowReader;
                 }
@@ -112,7 +116,7 @@ namespace CopySharepointList.Services
             while (listItems.NextPageRequest != null);
         }
 
-        public async Task AddRowToSlave(
+        private async Task AddRowToSlave(
             string siteSlaveId,
             string siteSlaveListId,
             Dictionary<string, object> row)
@@ -133,7 +137,7 @@ namespace CopySharepointList.Services
                 .AddAsync(listItem);
         }
 
-        public async Task UpdateRowToSlave(
+        private async Task UpdateRowToSlave(
            string siteSlaveId,
            string siteSlaveListId,
            string itemId,
@@ -153,7 +157,14 @@ namespace CopySharepointList.Services
                 .UpdateAsync(listItemUpdate);
         }
 
-        public async Task DeleteRowToSlave(
+        /// <summary>
+        /// Non utilizzato in questo momento la cancellazione
+        /// </summary>
+        /// <param name="siteSlaveId"></param>
+        /// <param name="siteSlaveListId"></param>
+        /// <param name="itemId"></param>
+        /// <returns></returns>
+        private async Task DeleteRowToSlave(
            string siteSlaveId,
            string siteSlaveListId,
            string itemId)
@@ -166,15 +177,63 @@ namespace CopySharepointList.Services
                 .DeleteAsync();
         }
 
-        public async Task GetListItemsMasterVersion(
-          string siteSlaveId,
-          string siteSlaveListId)
+        /// <summary>
+        /// Check row from first field of a row
+        /// </summary>
+        /// <param name="siteSlaveId"></param>
+        /// <param name="siteSlaveListId"></param>
+        /// <param name="row"></param>
+        /// <returns></returns>
+        private async Task<ListItem> FindRowToSlave(
+            string siteSlaveId,
+            string siteSlaveListId,
+            Dictionary<string, object> row)
         {
-            var version = await graphClient
+            var field = row.FirstOrDefault();
+            var queryOptions = new List<QueryOption>(1)
+            {
+                new QueryOption("filter", $"{field.Key} eq {field.Value}")
+            };
+
+            var oldRow = await graphClient
                 .Sites[siteSlaveId]
                 .Lists[siteSlaveListId]
-                .Items[""].Versions
-                .Request().GetAsync();
+                .Items
+                .Request(queryOptions)
+                .GetAsync();
+
+            return oldRow.FirstOrDefault();
+        }
+
+
+        public async Task ExecuteAsync()
+        {
+            await ReadListsToCopyAsync();
+            var listFieldsNames = readerFields.GetListFields();
+            var sitesToCopy = listConfigutation.SitesToCopy.Split(";");
+            foreach (var site in sitesToCopy)
+            {
+                foreach (var currentListFields in listFieldsNames.Lists)
+                {
+                    if (!await CheckListExist(site, currentListFields.ListId))
+                    {
+                        await CreateListAsync(site, currentListFields.ListName, currentListFields.Fields);
+                    }
+
+                    await foreach (var row in CopyFromMaster(
+                        listConfigutation.SiteMasterId,
+                        currentListFields.ListId,
+                        currentListFields.Fields))
+                    {
+                        var oldRow = await FindRowToSlave(site, currentListFields.ListId, row);
+                        if (oldRow != null)
+                            await UpdateRowToSlave(site, currentListFields.ListId, oldRow.Id, row);
+                        else
+                            await AddRowToSlave(site, currentListFields.ListId, row);
+                    }
+
+                }
+            }
         }
     }
 }

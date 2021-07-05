@@ -2,8 +2,9 @@
 {
     public class ListConfigurations
     {
-        public string ListMasterId { get; set; }
+        public string SiteMasterId { get; set; }
         public string ListsToCopy { get; set; }
+        public string SitesToCopy { get; set; }
         public string FieldToCopy { get; set; }
     }
 }
