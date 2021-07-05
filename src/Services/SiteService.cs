@@ -23,15 +23,21 @@ namespace CopySharepointList.Services
             this.listConfigutation = listConfigutation?.Value;
         }
 
-        private async Task<bool> CheckListExist(string siteId, string listId)
+        private async Task<bool> CheckListExist(string siteId, string listName)
         {
             var site = await graphClient.Sites[siteId].Request().GetAsync();
             if (site == null)
                 throw new System.ArgumentOutOfRangeException($"Sites {siteId} not exists");
 
-            var list = graphClient.Sites[siteId].Lists[listId].Request().GetAsync();
-
-            return list == null;
+            try
+            {
+                await graphClient.Sites[siteId].Lists[listName].Request().GetAsync();
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
         }
 
         private async Task CreateListAsync(string siteId, string listName, string[] fields)
@@ -82,7 +88,7 @@ namespace CopySharepointList.Services
 
         private async IAsyncEnumerable<Dictionary<string, object>> CopyFromMaster(
             string siteMasterId,
-            string siteMasterListId,
+            string siteMasterListName,
             string[] fields)
         {
             var queryOptions = new List<QueryOption>(1)
@@ -92,7 +98,7 @@ namespace CopySharepointList.Services
 
             var listItems = await graphClient
                            .Sites[siteMasterId]
-                           .Lists[siteMasterListId]
+                           .Lists[siteMasterListName]
                            .Items
                            .Request(queryOptions)
                            .GetAsync();
@@ -181,25 +187,22 @@ namespace CopySharepointList.Services
         /// Check row from first field of a row
         /// </summary>
         /// <param name="siteSlaveId"></param>
-        /// <param name="siteSlaveListId"></param>
+        /// <param name="siteSlaveListName"></param>
         /// <param name="row"></param>
         /// <returns></returns>
         private async Task<ListItem> FindRowToSlave(
             string siteSlaveId,
-            string siteSlaveListId,
+            string siteSlaveListName,
             Dictionary<string, object> row)
         {
+            // https://stackoverflow.com/questions/49172556/microsoft-graph-filtering-in-sdk-c-sharp/49172694
             var field = row.FirstOrDefault();
-            var queryOptions = new List<QueryOption>(1)
-            {
-                new QueryOption("filter", $"{field.Key} eq {field.Value}")
-            };
-
             var oldRow = await graphClient
                 .Sites[siteSlaveId]
-                .Lists[siteSlaveListId]
+                .Lists[siteSlaveListName]
                 .Items
-                .Request(queryOptions)
+                .Request()
+                .Filter($"{field.Key} eq {field.Value}")
                 .GetAsync();
 
             return oldRow.FirstOrDefault();
@@ -215,17 +218,17 @@ namespace CopySharepointList.Services
             {
                 foreach (var currentListFields in listFieldsNames.Lists)
                 {
-                    if (!await CheckListExist(site, currentListFields.ListId))
+                    if (!await CheckListExist(site, currentListFields.ListName))
                     {
                         await CreateListAsync(site, currentListFields.ListName, currentListFields.Fields);
                     }
 
                     await foreach (var row in CopyFromMaster(
                         listConfigutation.SiteMasterId,
-                        currentListFields.ListId,
+                        currentListFields.ListName,
                         currentListFields.Fields))
                     {
-                        var oldRow = await FindRowToSlave(site, currentListFields.ListId, row);
+                        var oldRow = await FindRowToSlave(site, currentListFields.ListName, row);
                         if (oldRow != null)
                             await UpdateRowToSlave(site, currentListFields.ListId, oldRow.Id, row);
                         else
