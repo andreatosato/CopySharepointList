@@ -9,26 +9,26 @@ namespace CopySharepointList.Services
 {
     class SiteService : ISiteService
     {
-        private readonly GraphServiceClient graphServiceClient;
+        private readonly GraphServiceClient graphClient;
         private readonly IReaderFields readerFields;
         private readonly ListConfigurations listConfigutation;
 
-        public SiteService(GraphServiceClient graphServiceClient,
+        public SiteService(GraphServiceClient graphClient,
             IOptions<ListConfigurations> listConfigutation,
             IReaderFields readerFields)
         {
-            this.graphServiceClient = graphServiceClient;
+            this.graphClient = graphClient;
             this.readerFields = readerFields;
             this.listConfigutation = listConfigutation?.Value;
         }
 
         public async Task<bool> CheckListExist(string siteId, string listId)
         {
-            var site = await graphServiceClient.Sites[siteId].Request().GetAsync();
+            var site = await graphClient.Sites[siteId].Request().GetAsync();
             if (site == null)
                 throw new System.ArgumentOutOfRangeException($"Sites {siteId} not exists");
 
-            var list = graphServiceClient.Sites[siteId].Lists[listId].Request().GetAsync();
+            var list = graphClient.Sites[siteId].Lists[listId].Request().GetAsync();
 
             return list == null;
         }
@@ -51,14 +51,14 @@ namespace CopySharepointList.Services
                 });
             }
 
-            await graphServiceClient.Sites[siteId].Lists
+            await graphClient.Sites[siteId].Lists
                 .Request()
                 .AddAsync(listToCreate);
         }
 
         public async Task ReadListsToCopyAsync()
         {
-            var listsMaster = await graphServiceClient.Sites[listConfigutation.ListMasterId]
+            var listsMaster = await graphClient.Sites[listConfigutation.ListMasterId]
                 .Lists
                 .Request()
                 .GetAsync();
@@ -79,12 +79,9 @@ namespace CopySharepointList.Services
             while (listsMaster.NextPageRequest != null);
         }
 
-
-        // TODO: draft
-        public async Task CopyFromMaster(string siteMasterId,
+        public async IAsyncEnumerable<Dictionary<string, object>> CopyFromMaster(
+            string siteMasterId,
             string siteMasterListId,
-            string siteSlaveId,
-            string siteSlaveListId,
             string[] fields)
         {
             var queryOptions = new List<QueryOption>(1)
@@ -92,25 +89,92 @@ namespace CopySharepointList.Services
                 new QueryOption("expand", "fields")
             };
 
-            var listItems = await graphServiceClient
+            var listItems = await graphClient
                            .Sites[siteMasterId]
                            .Lists[siteMasterListId]
                            .Items
-                           .Request(queryOptions).GetAsync();
+                           .Request(queryOptions)
+                           .GetAsync();
             do
             {
                 foreach (var row in listItems.CurrentPage)
                 {
-                    var rowValues = new Dictionary<string, object>();
+                    var rowReader = new Dictionary<string, object>();
                     foreach (var f in fields)
                     {
-                        rowValues.Add(f, row.Fields.AdditionalData[f]);
+                        rowReader.Add(f, row.Fields.AdditionalData[f]);
                     }
+                    yield return rowReader;
                 }
                 if (listItems.NextPageRequest != null)
                     await listItems.NextPageRequest.GetAsync();
             }
             while (listItems.NextPageRequest != null);
+        }
+
+        public async Task AddRowToSlave(
+            string siteSlaveId,
+            string siteSlaveListId,
+            Dictionary<string, object> row)
+        {
+            var listItem = new ListItem
+            {
+                Fields = new FieldValueSet
+                {
+                    AdditionalData = row
+                }
+            };
+
+            await graphClient
+                .Sites[siteSlaveId]
+                .Lists[siteSlaveListId]
+                .Items
+                .Request()
+                .AddAsync(listItem);
+        }
+
+        public async Task UpdateRowToSlave(
+           string siteSlaveId,
+           string siteSlaveListId,
+           string itemId,
+           Dictionary<string, object> row)
+        {
+            var listItemUpdate = new FieldValueSet
+            {
+                AdditionalData = row
+            };
+
+            await graphClient
+                .Sites[siteSlaveId]
+                .Lists[siteSlaveListId]
+                .Items[itemId]
+                .Fields
+                .Request()
+                .UpdateAsync(listItemUpdate);
+        }
+
+        public async Task DeleteRowToSlave(
+           string siteSlaveId,
+           string siteSlaveListId,
+           string itemId)
+        {
+            await graphClient
+                .Sites[siteSlaveId]
+                .Lists[siteSlaveListId]
+                .Items[itemId]
+                .Request()
+                .DeleteAsync();
+        }
+
+        public async Task GetListItemsMasterVersion(
+          string siteSlaveId,
+          string siteSlaveListId)
+        {
+            var version = await graphClient
+                .Sites[siteSlaveId]
+                .Lists[siteSlaveListId]
+                .Items[""].Versions
+                .Request().GetAsync();
         }
     }
 }
