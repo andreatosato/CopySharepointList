@@ -1,4 +1,5 @@
 ﻿using CopySharepointList.Configurations;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Graph;
 using System;
@@ -12,14 +13,17 @@ namespace CopySharepointList.Services
     {
         private readonly GraphServiceClient graphClient;
         private readonly IReaderFields readerFields;
+        private readonly ILogger<SiteService> logger;
         private readonly ListConfigurations listConfigutation;
 
         public SiteService(GraphServiceClient graphClient,
             IOptions<ListConfigurations> listConfigutation,
-            IReaderFields readerFields)
+            IReaderFields readerFields,
+            ILogger<SiteService> logger)
         {
             this.graphClient = graphClient;
             this.readerFields = readerFields;
+            this.logger = logger;
             this.listConfigutation = listConfigutation?.Value;
         }
 
@@ -109,6 +113,7 @@ namespace CopySharepointList.Services
                     var rowReader = new Dictionary<string, object>();
                     foreach (var f in fields)
                     {
+                        logger.LogDebug("Read {@Row}", row.Fields.AdditionalData);
                         if (row.Fields.AdditionalData.TryGetValue(f, out object currentValue))
                             rowReader.Add(f, currentValue);
                         else
