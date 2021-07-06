@@ -202,7 +202,8 @@ namespace CopySharepointList.Services
                 .Lists[siteSlaveListName]
                 .Items
                 .Request()
-                .Filter($"{field.Key} eq {field.Value}")
+                .Filter($"fields/{field.Key} eq '{field.Value}'")
+                .Header("Prefer", "HonorNonIndexedQueriesWarningMayFailRandomly")
                 .GetAsync();
 
             return oldRow.FirstOrDefault();
@@ -230,9 +231,9 @@ namespace CopySharepointList.Services
                     {
                         var oldRow = await FindRowToSlave(site, currentListFields.ListName, row);
                         if (oldRow != null)
-                            await UpdateRowToSlave(site, currentListFields.ListId, oldRow.Id, row);
+                            await UpdateRowToSlave(site, currentListFields.ListName, oldRow.Id, row);
                         else
-                            await AddRowToSlave(site, currentListFields.ListId, row);
+                            await AddRowToSlave(site, currentListFields.ListName, row);
                     }
 
                 }
