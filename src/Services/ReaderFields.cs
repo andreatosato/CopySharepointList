@@ -1,18 +1,22 @@
 ﻿using CopySharepointList.Configurations;
 using CopySharepointList.Models;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Linq;
+using System.Text.Json;
 
 namespace CopySharepointList.Services
 {
     public class ReaderFields : IReaderFields
     {
         private readonly ListConfigurations listConfiguration;
+        private readonly ILogger<ReaderFields> logger;
         private ListFields listFields;
 
-        public ReaderFields(IOptions<ListConfigurations> listConfiguration)
+        public ReaderFields(IOptions<ListConfigurations> listConfiguration, ILogger<ReaderFields> logger)
         {
             this.listConfiguration = listConfiguration?.Value;
+            this.logger = logger;
         }
 
         public ListFields GetListFields()
@@ -32,9 +36,13 @@ namespace CopySharepointList.Services
                     ListName = lists[i],
                     Fields = listConfiguration.FieldToCopy.Split(";")[i]
                                         .Split(",")
-                                        .ToArray()
+                                        .ToArray(),
+                    DisplayName = listConfiguration.DisplayNameToCopy.Split(";")[i]
+                                        .Split(",")
+                                        .ToArray(),
                 });
             }
+            logger.LogInformation("list and fields {0}", JsonSerializer.Serialize(listFields));
             return listFields;
         }
 
@@ -44,6 +52,7 @@ namespace CopySharepointList.Services
             {
                 var l = listFields.Lists.FirstOrDefault(t => t.ListName == listName);
                 l.ListId = listId;
+                logger.LogInformation("list is setted: {0}", l.ListId);
             }
         }
     }

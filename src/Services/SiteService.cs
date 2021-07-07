@@ -5,6 +5,7 @@ using Microsoft.Graph;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace CopySharepointList.Services
@@ -36,15 +37,17 @@ namespace CopySharepointList.Services
             try
             {
                 await graphClient.Sites[siteId].Lists[listName].Request().GetAsync();
+                logger.LogWarning("site-id: {0} and list-name {1} exist", siteId, listName);
                 return true;
             }
             catch (Exception)
             {
+                logger.LogWarning("site-id: {0} and list-name {1} NOT exist", siteId, listName);
                 return false;
             }
         }
 
-        private async Task CreateListAsync(string siteId, string listName, string[] fields)
+        private async Task CreateListAsync(string siteId, string listName, string[] fields, string[] displayName)
         {
             var listToCreate = new List
             {
@@ -58,6 +61,7 @@ namespace CopySharepointList.Services
                 listToCreate.Columns.Add(new ColumnDefinition
                 {
                     Name = fields[i],
+                    DisplayName = displayName[i],
                     Text = new TextColumn()
                 });
             }
@@ -65,6 +69,8 @@ namespace CopySharepointList.Services
             await graphClient.Sites[siteId].Lists
                 .Request()
                 .AddAsync(listToCreate);
+
+            logger.LogInformation("list created in: site {0}, listname: {1}, with fields {2} and description {3}", siteId, listName, JsonSerializer.Serialize(fields), JsonSerializer.Serialize(displayName));
         }
 
         private async Task ReadListsToCopyAsync()
@@ -80,6 +86,7 @@ namespace CopySharepointList.Services
             {
                 foreach (var l in listsMaster.CurrentPage)
                 {
+                    logger.LogInformation("list to copy: {0}", l.Name);
                     if (listsToCopy.Contains(l.Name))
                         readerFields.SetListId(l.Name, l.Id);
                 }
@@ -113,11 +120,11 @@ namespace CopySharepointList.Services
                     var rowReader = new Dictionary<string, object>();
                     foreach (var f in fields)
                     {
-                        logger.LogDebug("Read {@Row}", row.Fields.AdditionalData);
+                        logger.LogInformation("Read {0}", JsonSerializer.Serialize(row.Fields.AdditionalData));
                         if (row.Fields.AdditionalData.TryGetValue(f, out object currentValue))
                             rowReader.Add(f, currentValue);
                         else
-                            Console.WriteLine($"Il field {f} is not present");
+                            logger.LogError($"Il field {f} is not present");
                     }
                     yield return rowReader;
                 }
@@ -140,6 +147,8 @@ namespace CopySharepointList.Services
                 }
             };
 
+            logger.LogInformation("Add record {0} to list {1} in site {2}", JsonSerializer.Serialize(row), siteSlaveListId, siteSlaveId);
+
             await graphClient
                 .Sites[siteSlaveId]
                 .Lists[siteSlaveListId]
@@ -158,6 +167,8 @@ namespace CopySharepointList.Services
             {
                 AdditionalData = row
             };
+
+            logger.LogInformation("Update record {0} to list {1} in site {2}", JsonSerializer.Serialize(row), siteSlaveListId, siteSlaveId);
 
             await graphClient
                 .Sites[siteSlaveId]
@@ -202,6 +213,8 @@ namespace CopySharepointList.Services
         {
             // https://stackoverflow.com/questions/49172556/microsoft-graph-filtering-in-sdk-c-sharp/49172694
             var field = row.FirstOrDefault();
+            logger.LogInformation($"Finding record for {field.Key} eq '{field.Value}");
+
             var oldRow = await graphClient
                 .Sites[siteSlaveId]
                 .Lists[siteSlaveListName]
@@ -211,7 +224,12 @@ namespace CopySharepointList.Services
                 .Header("Prefer", "HonorNonIndexedQueriesWarningMayFailRandomly")
                 .GetAsync();
 
-            return oldRow.FirstOrDefault();
+            var find = oldRow.FirstOrDefault();
+            if (find == null)
+                return null;
+
+            logger.LogInformation($"Finded record for {field.Key} eq '{field.Value}");
+            return find;
         }
 
 
@@ -226,7 +244,7 @@ namespace CopySharepointList.Services
                 {
                     if (!await CheckListExist(site, currentListFields.ListName))
                     {
-                        await CreateListAsync(site, currentListFields.ListName, currentListFields.Fields);
+                        await CreateListAsync(site, currentListFields.ListName, currentListFields.Fields, currentListFields.DisplayName);
                     }
 
                     await foreach (var row in CopyFromMaster(

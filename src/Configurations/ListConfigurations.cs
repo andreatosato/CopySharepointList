@@ -6,5 +6,6 @@
         public string ListsToCopy { get; set; }
         public string SitesToCopy { get; set; }
         public string FieldToCopy { get; set; }
+        public string DisplayNameToCopy { get; set; }
     }
 }

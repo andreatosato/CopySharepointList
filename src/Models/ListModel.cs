@@ -7,6 +7,7 @@ namespace CopySharepointList.Models
         public string ListName { get; set; }
         public string ListId { get; set; }
         public string[] Fields { get; set; }
+        public string[] DisplayName { get; set; }
     }
 
     public class ListFields

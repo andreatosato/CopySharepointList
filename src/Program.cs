@@ -3,6 +3,7 @@ using CopySharepointList.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Graph;
 using Microsoft.Identity.Client;
@@ -59,6 +60,7 @@ namespace CopySharepointList
 
                     services.AddScoped<IReaderFields, ReaderFields>();
                     services.AddScoped<ISiteService, SiteService>();
+                    services.AddLogging(c => c.AddConsole());
                 })
                 .Build();
 
