@@ -25,6 +25,7 @@ Questa è la configurazione del file **local.settings.json** che può essere usa
     }
 }
 ```
+![AzureConfig](https://github.com/andreatosato/CopySharepointList/blob/main/docs/images/AzureConfig.png)
 
 ## Registrazione Autorizzazione
 Creare una app registration
