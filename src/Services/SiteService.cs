@@ -16,6 +16,7 @@ namespace CopySharepointList.Services
         private readonly IReaderFields readerFields;
         private readonly ILogger<SiteService> logger;
         private readonly ListConfigurations listConfigutation;
+        const string TitleColumn = "Title";
 
         public SiteService(GraphServiceClient graphClient,
             IOptions<ListConfigurations> listConfigutation,
@@ -47,7 +48,7 @@ namespace CopySharepointList.Services
             }
         }
 
-        private async Task CreateListAsync(string siteId, string listName, string[] fields, string[] displayName)
+        private async Task CreateListAsync(string siteMasterId, string siteId, string listName, string[] fields, string[] displayName)
         {
             var listToCreate = new List
             {
@@ -58,19 +59,74 @@ namespace CopySharepointList.Services
 
             for (int i = 0; i < fields.Length; i++)
             {
-                listToCreate.Columns.Add(new ColumnDefinition
-                {
-                    Name = fields[i],
-                    DisplayName = displayName[i],
-                    Text = new TextColumn()
-                });
+                var newColumn = await CreateFieldFromMasterList(siteMasterId, listName, fields[i], displayName[i]);
+                listToCreate.Columns.Add(newColumn);
             }
 
-            await graphClient.Sites[siteId].Lists
+            var newList = await graphClient.Sites[siteId].Lists
                 .Request()
                 .AddAsync(listToCreate);
 
+            if (!fields.Contains(TitleColumn))
+            {
+                var columns = await graphClient.Sites[siteId].Lists[newList.Id].Columns.Request().GetAsync();
+                if (columns.Any(t => t.Name == TitleColumn))
+                {
+                    try
+                    {
+                        var req = graphClient.Sites[siteId].Lists[newList.Id].Columns[TitleColumn].Request();
+                        var oldTitle = await req.GetAsync();
+                        if (oldTitle != null)
+                        {
+                            var titleNotRequired = new ColumnDefinition() { Id = oldTitle.Id, Required = false, Hidden = true, Indexed = false };
+                            var oldTitleNotRequired = await req.UpdateAsync(titleNotRequired);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        await graphClient.Sites[siteId].Lists[newList.Id].Request().DeleteAsync();
+                        throw ex;
+                    }
+                }
+
+            }
+
+
             logger.LogInformation("list created in: site {0}, listname: {1}, with fields {2} and description {3}", siteId, listName, JsonSerializer.Serialize(fields), JsonSerializer.Serialize(displayName));
+        }
+
+        private async Task<ColumnDefinition> CreateFieldFromMasterList(string siteMasterId, string listName, string field, string displayName)
+        {
+            var oldColumn = await graphClient.Sites[siteMasterId]
+                .Lists[listName]
+                .Columns[field]
+               .Request()
+               .GetAsync();
+
+            if (oldColumn == null)
+                logger.LogError($"In site master {siteMasterId} and list {listName} not exist field {field}");
+
+            if (oldColumn.DisplayName != displayName)
+                oldColumn.DisplayName = displayName;
+
+            return oldColumn;
+        }
+
+        private async Task<ColumnDefinition> CheckTitleField(string siteMasterId, string listName, string field, string displayName)
+        {
+            var oldColumn = await graphClient.Sites[siteMasterId]
+                .Lists[listName]
+                .Columns[field]
+               .Request()
+               .GetAsync();
+
+            if (oldColumn == null)
+                logger.LogError($"In site master {siteMasterId} and list {listName} not exist field {field}");
+
+            if (oldColumn.DisplayName != displayName)
+                oldColumn.DisplayName = displayName;
+
+            return oldColumn;
         }
 
         private async Task ReadListsToCopyAsync()
@@ -204,7 +260,7 @@ namespace CopySharepointList.Services
         /// </summary>
         /// <param name="siteSlaveId"></param>
         /// <param name="siteSlaveListName"></param>
-        /// <param name="row"></param>
+        /// <param name="row"></param>  
         /// <returns></returns>
         private async Task<ListItem> FindRowToSlave(
             string siteSlaveId,
@@ -213,25 +269,49 @@ namespace CopySharepointList.Services
         {
             // https://stackoverflow.com/questions/49172556/microsoft-graph-filtering-in-sdk-c-sharp/49172694
             var field = row.FirstOrDefault();
-            logger.LogInformation($"Finding record for {field.Key} eq '{field.Value}");
+            logger.LogInformation($"Finding record for {ReplaceSpecialCharacters(field.Key)} eq '{ReplaceSpecialCharacters(field.Value.ToString())}");
 
-            var oldRow = await graphClient
+            try
+            {
+                var oldRow = await graphClient
                 .Sites[siteSlaveId]
                 .Lists[siteSlaveListName]
                 .Items
                 .Request()
-                .Filter($"fields/{field.Key} eq '{field.Value}'")
+                .Filter($"fields/{ReplaceSpecialCharacters(field.Key)} eq '{ReplaceSpecialCharacters(field.Value.ToString())}'")
                 .Header("Prefer", "HonorNonIndexedQueriesWarningMayFailRandomly")
                 .GetAsync();
 
-            var find = oldRow.FirstOrDefault();
-            if (find == null)
-                return null;
+                var find = oldRow.FirstOrDefault();
+                if (find == null)
+                    return null;
 
-            logger.LogInformation($"Finded record for {field.Key} eq '{field.Value}");
-            return find;
+                logger.LogInformation($"Finded record for {field.Key} eq '{field.Value}");
+                return find;
+            }
+            catch (Exception ex)
+            {
+
+                throw ex;
+            }
         }
 
+        public string ReplaceSpecialCharacters(string attribute)
+        {
+            // replace the single quotes
+            attribute = attribute.Replace("'", "''");
+
+
+            attribute = attribute.Replace("%", "%25");
+            attribute = attribute.Replace("+", "%2B");
+            attribute = attribute.Replace(@"\", "%2F");
+
+            attribute = attribute.Replace("?", "%3F");
+
+            attribute = attribute.Replace("#", "%23");
+            attribute = attribute.Replace("&", "%26");
+            return attribute;
+        }
 
         public async Task ExecuteAsync()
         {
@@ -244,7 +324,7 @@ namespace CopySharepointList.Services
                 {
                     if (!await CheckListExist(site, currentListFields.ListName))
                     {
-                        await CreateListAsync(site, currentListFields.ListName, currentListFields.Fields, currentListFields.DisplayName);
+                        await CreateListAsync(listConfigutation.SiteMasterId, site, currentListFields.ListName, currentListFields.Fields, currentListFields.DisplayName);
                     }
 
                     await foreach (var row in CopyFromMaster(

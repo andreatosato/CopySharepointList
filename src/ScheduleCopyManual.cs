@@ -30,7 +30,7 @@ namespace CopySharepointList
             return new OkResult();
         }
 
-        [Function("ScheduleCopyTimer")]
+        //[Function("ScheduleCopyTimer")]
         public async Task RunTimer([TimerTrigger("%Cron%")] object myTimer, FunctionContext context)
         {
             var logger = context.GetLogger("ScheduleCopyTimer");
